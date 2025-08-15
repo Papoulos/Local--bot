@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+ollama
+langchain
+langchain-community
+typer[all]
+beautifulsoup4
+unstructured
+faiss-cpu
+requests
