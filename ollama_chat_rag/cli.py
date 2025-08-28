@@ -6,7 +6,7 @@ from multiprocessing import Process
 app = typer.Typer()
 
 def run_app():
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("ollama_chat_rag.main:app", host="0.0.0.0", port=8000, reload=False)
 
 @app.command()
 def chat(message: str):
