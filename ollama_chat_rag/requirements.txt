@@ -4,6 +4,7 @@ python-dotenv
 ollama
 langchain
 langchain-community
+langchain-ollama
 typer[all]
 beautifulsoup4
 unstructured

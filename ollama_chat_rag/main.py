@@ -16,8 +16,8 @@ if os.getenv("USE_MOCK_OLLAMA", "false").lower() == "true":
     from .mock_ollama import MockChatOllama as ChatOllama
     from .mock_ollama import MockOllamaEmbeddings as OllamaEmbeddings
 else:
-    from langchain_community.chat_models import ChatOllama
-    from langchain_community.embeddings import OllamaEmbeddings
+    from langchain_ollama import ChatOllama
+    from langchain_ollama import OllamaEmbeddings
 
 load_dotenv()
 
@@ -30,6 +30,10 @@ with open(config_path, "r") as f:
     config = json.load(f)
 
 API_KEY = os.getenv("API_KEY")
+
+# In-memory cache for expensive objects
+llm_cache = {}
+db_cache = {}
 
 async def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key != API_KEY:
@@ -92,14 +96,22 @@ async def chat_completions(request: ChatCompletionRequest):
     if not user_message:
         raise HTTPException(status_code=400, detail="No user message found in the request.")
 
+    # Use cache to load/store LLM
+    if model_name not in llm_cache:
+        llm_cache[model_name] = ChatOllama(model=model_name)
+    llm = llm_cache[model_name]
+
     response_content = ""
-    llm = ChatOllama(model=model_name)
 
     if model_type == "llm":
         response = llm.invoke(user_message)
         response_content = response.content
     elif model_type == "rag":
-        db = create_vector_store(model_name=model_name)
+        # Use cache to load/store vector database
+        if model_name not in db_cache:
+            db_cache[model_name] = create_vector_store(model_name=model_name)
+        db = db_cache[model_name]
+
         qa_chain = RetrievalQA.from_chain_type(llm, retriever=db.as_retriever())
         response = qa_chain.invoke({"query": user_message})
         response_content = response["result"]
