@@ -1,0 +1,12 @@
+{
+  "models": {
+    "chat": {
+      "type": "llm",
+      "model_name": "mistral"
+    },
+    "cypher": {
+      "type": "rag",
+      "model_name": "mistral"
+    }
+  }
+}
