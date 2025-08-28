@@ -1,9 +1,9 @@
-from langchain_core.outputs import ChatGeneration, LLMResult
+from langchain_core.messages import AIMessage
 from langchain_core.pydantic_v1 import BaseModel
 
 class MockChatOllama(BaseModel):
-    def invoke(self, message: str):
-        return ChatGeneration(message=f"Mock response to: {message}")
+    def invoke(self, message: str, **kwargs):
+        return AIMessage(content=f"Mock response to: {message}")
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
