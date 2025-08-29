@@ -2,29 +2,26 @@ import typer
 import requests
 import uvicorn
 from multiprocessing import Process
-import subprocess
-import shlex
 import os
 
 app = typer.Typer()
 
 def run_app(prod: bool = False):
-    """Run the FastAPI application."""
+    """Run the FastAPI application using Uvicorn."""
     if prod:
+        # In production mode, we bind to localhost only for security when using a tunnel.
+        # Uvicorn's multi-worker mode is not supported on Windows, so we run a single worker.
+        # This is sufficient for the intended use case.
         host = "127.0.0.1"
         port = 8000
-        workers = (os.cpu_count() or 1) * 2 + 1
-        command = f"gunicorn -w {workers} -k uvicorn.workers.UvicornWorker --bind {host}:{port} ollama_chat_rag.main:app"
-
-        print(f"Starting production server with command: {command}")
-        try:
-            subprocess.run(shlex.split(command))
-        except FileNotFoundError:
-            print("\nError: 'gunicorn' command not found.")
-            print("Please install it with: pip install gunicorn")
-
+        print(f"Starting server in production mode on {host}:{port}")
+        uvicorn.run("ollama_chat_rag.main:app", host=host, port=port, reload=False)
     else:
-        uvicorn.run("ollama_chat_rag.main:app", host="0.0.0.0", port=8000, reload=False)
+        # In development mode, we bind to all interfaces for easier local network access.
+        host = "0.0.0.0"
+        port = 8000
+        print(f"Starting server in development mode on {host}:{port}")
+        uvicorn.run("ollama_chat_rag.main:app", host=host, port=port, reload=False)
 
 
 @app.command()
@@ -47,13 +44,13 @@ def rag(question: str):
 def start(
     background: bool = typer.Option(False, "--background", "-b", help="Run the server in the background."),
     mock: bool = typer.Option(False, "--mock", help="Use mock Ollama for testing."),
-    prod: bool = typer.Option(False, "--prod", help="Run in production mode with Gunicorn.")
+    prod: bool = typer.Option(False, "--prod", help="Run in production mode.")
 ):
     """
     Start the FastAPI application.
 
-    In development mode (default), it uses Uvicorn and listens on 0.0.0.0:8000.
-    In production mode (--prod), it uses Gunicorn and listens on 127.0.0.1:8000.
+    In development mode (default), it listens on 0.0.0.0:8000.
+    In production mode (--prod), it listens on 127.0.0.1:8000 for safer tunneling.
     """
     if mock:
         os.environ["USE_MOCK_OLLAMA"] = "true"
@@ -63,7 +60,7 @@ def start(
         # This is compatible with multiprocessing on all platforms.
         p = Process(target=run_app, args=(prod,))
         p.start()
-        mode = "production (Gunicorn)" if prod else "development (Uvicorn)"
+        mode = "production" if prod else "development"
         print(f"FastAPI application started in the background in {mode} mode.")
     else:
         run_app(prod=prod)
