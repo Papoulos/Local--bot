@@ -58,11 +58,10 @@ def start(
     if mock:
         os.environ["USE_MOCK_OLLAMA"] = "true"
 
-    # Use a lambda to pass the 'prod' argument to run_app
-    target_func = lambda: run_app(prod=prod)
-
     if background:
-        p = Process(target=target_func)
+        # Pass run_app and its arguments directly to Process.
+        # This is compatible with multiprocessing on all platforms.
+        p = Process(target=run_app, args=(prod,))
         p.start()
         mode = "production (Gunicorn)" if prod else "development (Uvicorn)"
         print(f"FastAPI application started in the background in {mode} mode.")
