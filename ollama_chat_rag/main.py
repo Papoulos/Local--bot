@@ -23,12 +23,18 @@ else:
 load_dotenv()
 
 # Logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(message)s",
-    filename="chat.log",
-    filemode="a"
-)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s - %(message)s")
+# File handler
+file_handler = logging.FileHandler("chat.log", mode="a")
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+# Stream handler
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
 
 app = FastAPI()
 
