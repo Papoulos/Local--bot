@@ -27,7 +27,7 @@ This will open a browser window asking you to log in to your Cloudflare account 
 
 ### Step 2: Install Dependencies
 
-Make sure you have installed all the required Python packages, including the new `gunicorn` server:
+Make sure you have installed all the required Python packages:
 
 ```bash
 pip install -r ollama_chat_rag/requirements.txt
@@ -35,7 +35,7 @@ pip install -r ollama_chat_rag/requirements.txt
 
 ### Step 3: Start the API Application
 
-Next, start the API in **production mode**. The following command uses `gunicorn` to run the application and puts it in the background so you can proceed to the next step.
+Next, start the API in **production mode**. The following command runs the application and puts it in the background so you can proceed to the next step.
 
 ```bash
 python -m ollama_chat_rag.cli start --prod --background
@@ -59,4 +59,6 @@ cloudflared tunnel --url http://127.0.0.1:8000 --hostname api.your-domain.com
 ## How to Stop Everything
 
 1.  **Stop the Tunnel:** Press `Ctrl+C` in the terminal where `cloudflared` is running.
-2.  **Stop the Application:** You need to find the background process and stop it. You can find the process ID (PID) with a command like `pgrep -f gunicorn` and then stop it with `kill <PID>`.
+2.  **Stop the Application:** You need to find the background application process and stop it.
+    -   **On Linux or macOS:** You can find the process ID (PID) with `pgrep -f "ollama_chat_rag.cli"` and then stop it with `kill <PID>`.
+    -   **On Windows:** Open the Task Manager, find the "Python" process that is running the application, and end the task.
