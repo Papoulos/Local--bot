@@ -6,7 +6,8 @@
     },
     "cypher": {
       "type": "rag",
-      "model_name": "mistral"
+      "model_name": "mistral",
+      "vector_store_path": "vector_store"
     }
   }
 }

@@ -79,17 +79,6 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: List[Choice]
 
-def create_vector_store(documents_path="documents", model_name="mistral"):
-    script_dir = os.path.dirname(__file__)
-    documents_path = os.path.join(script_dir, documents_path)
-    loader = DirectoryLoader(documents_path, glob="**/*.txt", loader_cls=UnstructuredFileLoader)
-    documents = loader.load()
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    texts = text_splitter.split_documents(documents)
-    embeddings = OllamaEmbeddings(model=model_name)
-    db = FAISS.from_documents(texts, embeddings)
-    return db
-
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse, dependencies=[Depends(verify_api_key)])
 async def chat_completions(request_data: ChatCompletionRequest, request: Request):
     # Log incoming request
@@ -123,10 +112,27 @@ async def chat_completions(request_data: ChatCompletionRequest, request: Request
         response = llm.invoke(user_message)
         response_content = response.content
     elif model_type == "rag":
+        vector_store_path = model_config.get("vector_store_path")
+        if not vector_store_path:
+            raise HTTPException(status_code=500, detail=f"Vector store path not configured for model '{model_key}'.")
+
+        # Construct the full path to the vector store directory
+        script_dir = os.path.dirname(__file__)
+        vector_store_full_path = os.path.join(script_dir, vector_store_path)
+
+        if not os.path.isdir(vector_store_full_path):
+            raise HTTPException(status_code=500, detail=f"Vector store directory not found at '{vector_store_full_path}'. Please build it first.")
+
+        # Use a unique key for the db_cache based on the path
+        db_cache_key = vector_store_full_path
+
         # Use cache to load/store vector database
-        if model_name not in db_cache:
-            db_cache[model_name] = create_vector_store(model_name=model_name)
-        db = db_cache[model_name]
+        if db_cache_key not in db_cache:
+            print(f"Loading vector store from: {vector_store_full_path}")
+            embeddings = OllamaEmbeddings(model=model_name)
+            db_cache[db_cache_key] = FAISS.load_local(vector_store_full_path, embeddings, allow_dangerous_deserialization=True)
+
+        db = db_cache[db_cache_key]
 
         qa_chain = RetrievalQA.from_chain_type(llm, retriever=db.as_retriever())
         response = qa_chain.invoke({"query": user_message})
