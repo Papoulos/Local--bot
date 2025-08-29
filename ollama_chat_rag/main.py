@@ -2,9 +2,10 @@ import os
 import json
 import uuid
 import time
+import logging
 from typing import List
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, Depends, HTTPException
+from fastapi import FastAPI, Header, Depends, HTTPException, Request
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader, UnstructuredFileLoader
 from langchain_community.vectorstores import FAISS
@@ -20,6 +21,14 @@ else:
     from langchain_ollama import OllamaEmbeddings
 
 load_dotenv()
+
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(message)s",
+    filename="chat.log",
+    filemode="a"
+)
 
 app = FastAPI()
 
@@ -76,22 +85,23 @@ def create_vector_store(documents_path="documents", model_name="mistral"):
     return db
 
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse, dependencies=[Depends(verify_api_key)])
-async def chat_completions(request: ChatCompletionRequest):
-    model_key = request.model
+async def chat_completions(request_data: ChatCompletionRequest, request: Request):
+    # Log incoming request
+    user_message = ""
+    for msg in reversed(request_data.messages):
+        if msg.role == 'user':
+            user_message = msg.content
+            break
+
+    logging.info(f"Request - IP: {request.client.host}, Method: {request.method}, Keyword: {user_message}")
+
+    model_key = request_data.model
     if model_key not in config["models"]:
         raise HTTPException(status_code=404, detail=f"Model '{model_key}' not found.")
 
     model_config = config["models"][model_key]
     model_type = model_config["type"]
     model_name = model_config["model_name"]
-
-    # For simplicity, we take the last user message as the prompt
-    # A more advanced implementation would handle the full conversation history
-    user_message = ""
-    for msg in reversed(request.messages):
-        if msg.role == 'user':
-            user_message = msg.content
-            break
 
     if not user_message:
         raise HTTPException(status_code=400, detail="No user message found in the request.")
@@ -120,6 +130,8 @@ async def chat_completions(request: ChatCompletionRequest):
 
     response_message = ResponseMessage(role="assistant", content=response_content)
     choice = Choice(message=response_message)
+
+    logging.info(f"Response - Destination IP: {request.client.host}")
 
     return ChatCompletionResponse(
         model=model_key,
