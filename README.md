@@ -63,6 +63,12 @@ python -m ollama_chat_rag.cli start
 
 The API will be available at `http://localhost:8000`.
 
+## Secure Deployment
+
+To securely publish this API on the internet, please follow the detailed instructions in the deployment guide:
+
+**[➡️ Secure Deployment Guide](./DEPLOYMENT.md)**
+
 ### Running in Mock Mode for Testing
 
 For development or testing purposes, you can run the server in a "mock" mode. In this mode, it does not connect to a real Ollama instance. Instead, it uses mock objects that return predictable, pre-defined responses.
