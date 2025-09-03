@@ -3,14 +3,20 @@ import json
 import uuid
 import time
 import logging
-from typing import List
+import sys
+from typing import List, AsyncGenerator
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader, UnstructuredFileLoader
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from pydantic import BaseModel
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+
 
 # Conditionally import real or mock classes based on environment variable
 if os.getenv("USE_MOCK_OLLAMA", "false").lower() == "true":
@@ -23,19 +29,12 @@ else:
 load_dotenv()
 
 # Logging configuration
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-formatter = logging.Formatter("%(asctime)s - %(message)s")
-# File handler
-file_handler = logging.FileHandler("chat.log", mode="a")
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
-# Stream handler
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(formatter)
-logger.addHandler(stream_handler)
-
-
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("debug.log"),
+                        logging.StreamHandler()
+                    ])
 app = FastAPI()
 
 # Load config
@@ -62,6 +61,7 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
+    stream: bool = False
 
 class ResponseMessage(BaseModel):
     role: str
@@ -79,6 +79,24 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: List[Choice]
 
+# Pydantic models for streaming
+class ChoiceDelta(BaseModel):
+    content: str | None = None
+    role: str | None = None
+
+class ChoiceChunk(BaseModel):
+    index: int = 0
+    delta: ChoiceDelta
+    finish_reason: str | None = None
+
+class ChatCompletionChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int = int(time.time())
+    model: str
+    choices: List[ChoiceChunk]
+
+
 def create_vector_store(documents_path="documents", model_name="mistral"):
     script_dir = os.path.dirname(__file__)
     documents_path = os.path.join(script_dir, documents_path)
@@ -90,16 +108,74 @@ def create_vector_store(documents_path="documents", model_name="mistral"):
     db = FAISS.from_documents(texts, embeddings)
     return db
 
-@app.post("/v1/chat/completions", response_model=ChatCompletionResponse, dependencies=[Depends(verify_api_key)])
+async def stream_generator(model_key: str, user_message: str, llm, model_type: str, model_name: str) -> AsyncGenerator[str, None]:
+    """Yields server-sent events for streaming responses."""
+    request_id = f"chatcmpl-{uuid.uuid4()}"
+
+    # First chunk with role
+    first_chunk = ChatCompletionChunk(
+        id=request_id,
+        model=model_key,
+        choices=[ChoiceChunk(delta=ChoiceDelta(role="assistant"))]
+    )
+    yield f"data: {first_chunk.model_dump_json()}\n\n"
+
+    if model_type == "llm":
+        async for chunk in llm.astream(user_message):
+            chunk_delta = ChatCompletionChunk(
+                id=request_id,
+                model=model_key,
+                choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk.content))]
+            )
+            yield f"data: {chunk_delta.model_dump_json()}\n\n"
+
+    elif model_type == "rag":
+        if model_name not in db_cache:
+            db_cache[model_name] = create_vector_store(model_name=model_name)
+        db = db_cache[model_name]
+        retriever = db.as_retriever()
+
+        template = """Answer the question based only on the following context:
+        {context}
+
+        Question: {question}
+        """
+        prompt = PromptTemplate.from_template(template)
+
+        rag_chain = (
+            {"context": retriever, "question": RunnablePassthrough()}
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+
+        async for chunk in rag_chain.astream(user_message):
+            chunk_delta = ChatCompletionChunk(
+                id=request_id,
+                model=model_key,
+                choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk))]
+            )
+            yield f"data: {chunk_delta.model_dump_json()}\n\n"
+
+    # Final chunk with finish reason
+    final_chunk = ChatCompletionChunk(
+        id=request_id,
+        model=model_key,
+        choices=[ChoiceChunk(delta=ChoiceDelta(), finish_reason="stop")]
+    )
+    yield f"data: {final_chunk.model_dump_json()}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+@app.post("/v1/chat/completions", dependencies=[Depends(verify_api_key)])
 async def chat_completions(request_data: ChatCompletionRequest, request: Request):
-    # Log incoming request
     user_message = ""
     for msg in reversed(request_data.messages):
         if msg.role == 'user':
             user_message = msg.content
             break
 
-    logging.info(f"Request - IP: {request.client.host}, Method: {request.method}, Keyword: {user_message}")
+    logging.info(f"Request - IP: {request.client.host}, Method: {request.method}, Keyword: {user_message}, Stream: {request_data.stream}")
 
     model_key = request_data.model
     if model_key not in config["models"]:
@@ -112,34 +188,37 @@ async def chat_completions(request_data: ChatCompletionRequest, request: Request
     if not user_message:
         raise HTTPException(status_code=400, detail="No user message found in the request.")
 
-    # Use cache to load/store LLM
     if model_name not in llm_cache:
         llm_cache[model_name] = ChatOllama(model=model_name)
     llm = llm_cache[model_name]
 
-    response_content = ""
-
-    if model_type == "llm":
-        response = llm.invoke(user_message)
-        response_content = response.content
-    elif model_type == "rag":
-        # Use cache to load/store vector database
-        if model_name not in db_cache:
-            db_cache[model_name] = create_vector_store(model_name=model_name)
-        db = db_cache[model_name]
-
-        qa_chain = RetrievalQA.from_chain_type(llm, retriever=db.as_retriever())
-        response = qa_chain.invoke({"query": user_message})
-        response_content = response["result"]
+    if request_data.stream:
+        # For streaming, we return a StreamingResponse
+        return StreamingResponse(
+            stream_generator(model_key, user_message, llm, model_type, model_name),
+            media_type="text/event-stream"
+        )
     else:
-        raise HTTPException(status_code=500, detail=f"Unsupported model type: {model_type}")
+        # Original non-streaming logic
+        response_content = ""
+        if model_type == "llm":
+            response = llm.invoke(user_message)
+            response_content = response.content
+        elif model_type == "rag":
+            if model_name not in db_cache:
+                db_cache[model_name] = create_vector_store(model_name=model_name)
+            db = db_cache[model_name]
 
-    response_message = ResponseMessage(role="assistant", content=response_content)
-    choice = Choice(message=response_message)
+            qa_chain = RetrievalQA.from_chain_type(llm, retriever=db.as_retriever())
+            response = qa_chain.invoke({"query": user_message})
+            response_content = response["result"]
+        else:
+            raise HTTPException(status_code=500, detail=f"Unsupported model type: {model_type}")
 
-    logging.info(f"Response - Destination IP: {request.client.host}")
-
-    return ChatCompletionResponse(
-        model=model_key,
-        choices=[choice]
-    )
+        response_message = ResponseMessage(role="assistant", content=response_content)
+        choice = Choice(message=response_message)
+        logging.info(f"Response - Destination IP: {request.client.host}")
+        return ChatCompletionResponse(
+            model=model_key,
+            choices=[choice]
+        )
