@@ -10,3 +10,4 @@ beautifulsoup4
 unstructured
 faiss-cpu==1.10.0
 requests
+leann
