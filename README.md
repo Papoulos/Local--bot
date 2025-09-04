@@ -8,58 +8,57 @@ Toutes les appels API sont sécurisés par une clé API secrète. Les formats de
 
 ## Objectif du projet
 
-L'objectif principal de ce projet est de fournir une interface unifiée et sécurisée pour vos modèles de langage locaux. Il permet de centraliser l'accès, de gérer différentes configurations de modèles (par exemple, un modèle pour la discussion générale, un autre spécialisé pour l'analyse de documents) et de protéger l'accès avec une clé API, que vous l'utilisiez localement ou que vous l'exposiez de manière sécurisée sur internet.
+L'objectif principal de ce projet est de fournir une interface unifiée et sécurisée pour vos modèles de langage locaux. Il permet de centraliser l'accès, de gérer différentes configurations de modèles (par exemple, un modèle pour la discussion générale, un autre spécialisé pour l'analyse de documents) et de protéger l'accès avec une clé API.
 
 ## Features du projet
 
-- **Routage de Modèles Configurable :** Définissez des mots-clés (ex: "chat", "expert_cypher") dans un fichier `config.json` et mappez-les à différents modèles Ollama ou à des chaînes de traitement.
+- **Routage de Modèles Configurable :** Définissez des mots-clés (ex: "chat", "cypher") dans un fichier `config.json` et mappez-les à différents modèles Ollama ou à des chaînes de traitement.
 - **Authentification par Clé API :** Protégez vos modèles locaux avec une clé API secrète.
 - **API Standardisée :** Formats de requête et de réponse compatibles avec OpenAI pour une intégration facile.
-- **Support RAG :** Prise en charge intégrée de la Génération Augmentée par Récupération (RAG) pour discuter avec vos documents.
+- **Support RAG :** Prise en charge intégrée de la Génération Augmentée par Récupération (RAG) avec `faiss` pour discuter avec vos documents.
 - **Interface en Ligne de Commande (CLI) :** Une CLI simple pour démarrer le serveur et interagir avec les modèles.
 
 ## Prérequis
 
-Ce projet utilise `uv` pour la gestion des dépendances, qui est une alternative extrêmement rapide à `pip`.
-
-Avant de continuer, assurez-vous d'avoir installé `uv`.
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-Après l'installation, suivez les instructions pour ajouter `uv` à votre `PATH`.
+Assurez-vous d'avoir Python 3.8+ installé sur votre système.
 
 ## Installation du projet
 
 Si vous lisez ceci, vous avez probablement déjà cloné le dépôt.
 
 1.  **Installez les dépendances :**
-    Assurez-vous d'avoir Python 3.8+ et `uv` installés.
+    Ouvrez un terminal et exécutez la commande suivante pour installer les paquets Python nécessaires.
     ```bash
-    uv pip install -r ollama_chat_rag/requirements.txt
+    pip install -r ollama_chat_rag/requirements.txt
     ```
 
 2.  **Configurez l'environnement :**
     Copiez le fichier `.env.example` et modifiez-le pour définir votre clé API secrète.
+
+    Sur Linux/macOS :
     ```bash
     cp ollama_chat_rag/.env.example ollama_chat_rag/.env
     ```
-    Ensuite, ouvrez `ollama_chat_rag/.env` et changez la valeur de `API_KEY`.
+    Sur Windows :
+    ```powershell
+    copy ollama_chat_rag\.env.example ollama_chat_rag\.env
+    ```
+    Ensuite, ouvrez `ollama_chat_rag/.env` avec un éditeur de texte et changez la valeur de `API_KEY`.
 
-## Utilisation du Script `run.sh`
+## Utilisation des Scripts de Lancement
 
-Pour simplifier le lancement, un script `run.sh` est fourni. Il installe les dépendances puis démarre le serveur avec les options que vous lui passez.
+Pour simplifier le lancement, des scripts sont fournis pour chaque plateforme. Ils installent les dépendances (si nécessaire) puis démarrent le serveur avec les options que vous leur passez.
 
-**Exemple de lancement en mode mock :**
-```bash
-./run.sh start --mock
-```
+-   **Sur Linux ou macOS :**
+    ```bash
+    ./run.sh start --mock
+    ```
+-   **Sur Windows :**
+    ```batch
+    .\run.bat start --mock
+    ```
 
-Cela équivaut à exécuter les commandes suivantes manuellement :
-```bash
-uv pip install -r ollama_chat_rag/requirements.txt
-python -m ollama_chat_rag.cli start --mock
-```
+Ces scripts sont le moyen le plus simple de démarrer.
 
 ## Configuration et Options
 
@@ -82,11 +81,11 @@ Ouvrez `ollama_chat_rag/config.json` pour définir vos modèles. Le `type` peut 
 }
 ```
 
-Pour les modèles de type `rag`, placez vos fichiers (`.txt`, etc.) dans le dossier `ollama_chat_rag/documents/`.
+Pour les modèles de type `rag`, placez vos fichiers (`.txt`, etc.) dans le dossier `ollama_chat_rag/documents/`. Le système utilisera la bibliothèque `faiss` pour créer un index en mémoire de ces documents.
 
 ### 2. Options de Lancement du Serveur
 
-Utilisez la CLI pour démarrer le serveur FastAPI.
+Utilisez la CLI pour démarrer le serveur FastAPI manuellement.
 
 ```bash
 python -m ollama_chat_rag.cli start
@@ -95,7 +94,7 @@ python -m ollama_chat_rag.cli start
 Voici les options disponibles :
 -   `--mock` : Lance le serveur en mode "mock", sans connexion réelle à Ollama. Idéal pour les tests.
 -   `--prod` : Lance le serveur en mode "production", en écoutant sur `127.0.0.1:8000` (plus sécurisé pour une exposition via tunnel). Par défaut, le serveur écoute sur `0.0.0.0:8000`.
--   `--background` ou `-b` : Lance le serveur en arrière-plan.
+-   `--background` ou `-b` : Lance le serveur en arrière-plan (non recommandé sur Windows).
 
 **Exemple de lancement en mode mock :**
 ```bash
