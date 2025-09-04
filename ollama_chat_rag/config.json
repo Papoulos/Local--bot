@@ -6,6 +6,13 @@
     },
     "cypher": {
       "type": "rag",
+      "rag_type": "faiss",
+      "model_name": "mistral"
+    },
+    "leann_rag": {
+      "type": "rag",
+      "rag_type": "leann",
+      "index_path": "leann_index.leann",
       "model_name": "mistral"
     }
   }
