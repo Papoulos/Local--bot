@@ -46,6 +46,21 @@ Si vous lisez ceci, vous avez probablement déjà cloné le dépôt.
     ```
     Ensuite, ouvrez `ollama_chat_rag/.env` et changez la valeur de `API_KEY`.
 
+## Utilisation du Script `run.sh`
+
+Pour simplifier le lancement, un script `run.sh` est fourni. Il installe les dépendances puis démarre le serveur avec les options que vous lui passez.
+
+**Exemple de lancement en mode mock :**
+```bash
+./run.sh start --mock
+```
+
+Cela équivaut à exécuter les commandes suivantes manuellement :
+```bash
+uv pip install -r ollama_chat_rag/requirements.txt
+python -m ollama_chat_rag.cli start --mock
+```
+
 ## Configuration et Options
 
 ### 1. Configuration des Modèles
