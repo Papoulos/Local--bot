@@ -16,7 +16,6 @@ from pydantic import BaseModel
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
-from leann import LeannSearcher
 
 
 # Conditionally import real or mock classes based on environment variable
@@ -49,7 +48,6 @@ API_KEY = os.getenv("API_KEY")
 # In-memory cache for expensive objects
 llm_cache = {}
 db_cache = {}
-leann_searcher_cache = {}
 
 async def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key != API_KEY:
@@ -140,54 +138,25 @@ async def stream_generator(model_key: str, user_message: str, llm, model_config:
         Question: {question}
         """
         prompt = PromptTemplate.from_template(template)
-        rag_type = model_config.get("rag_type", "faiss") # Default to faiss for backward compatibility
 
-        if rag_type == "faiss":
-            if model_name not in db_cache:
-                db_cache[model_name] = create_vector_store(model_name=model_name)
-            db = db_cache[model_name]
-            retriever = db.as_retriever()
+        if model_name not in db_cache:
+            db_cache[model_name] = create_vector_store(model_name=model_name)
+        db = db_cache[model_name]
+        retriever = db.as_retriever()
 
-            rag_chain = (
-                {"context": retriever, "question": RunnablePassthrough()}
-                | prompt
-                | llm
-                | StrOutputParser()
+        rag_chain = (
+            {"context": retriever, "question": RunnablePassthrough()}
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+        async for chunk in rag_chain.astream(user_message):
+            chunk_delta = ChatCompletionChunk(
+                id=request_id,
+                model=model_key,
+                choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk))]
             )
-            async for chunk in rag_chain.astream(user_message):
-                chunk_delta = ChatCompletionChunk(
-                    id=request_id,
-                    model=model_key,
-                    choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk))]
-                )
-                yield f"data: {chunk_delta.model_dump_json()}\n\n"
-
-        elif rag_type == "leann":
-            index_path = model_config["index_path"]
-            full_index_path = os.path.join(script_dir, index_path)
-
-            if full_index_path not in leann_searcher_cache:
-                if not os.path.exists(full_index_path):
-                    raise FileNotFoundError(f"Leann index not found at {full_index_path}. Please build it first using the 'build-leann-index' command.")
-                leann_searcher_cache[full_index_path] = LeannSearcher(full_index_path)
-
-            searcher = leann_searcher_cache[full_index_path]
-            results = searcher.search(user_message, top_k=3)
-            context = "\n\n".join([res["text"] for res in results])
-
-            rag_chain = (
-                prompt
-                | llm
-                | StrOutputParser()
-            )
-
-            async for chunk in rag_chain.astream({"context": context, "question": user_message}):
-                chunk_delta = ChatCompletionChunk(
-                    id=request_id,
-                    model=model_key,
-                    choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk))]
-                )
-                yield f"data: {chunk_delta.model_dump_json()}\n\n"
+            yield f"data: {chunk_delta.model_dump_json()}\n\n"
 
     # Final chunk with finish reason
     final_chunk = ChatCompletionChunk(
@@ -237,39 +206,13 @@ async def chat_completions(request_data: ChatCompletionRequest, request: Request
             response = llm.invoke(user_message)
             response_content = response.content
         elif model_type == "rag":
-            rag_type = model_config.get("rag_type", "faiss")
+            if model_name not in db_cache:
+                db_cache[model_name] = create_vector_store(model_name=model_name)
+            db = db_cache[model_name]
 
-            if rag_type == "faiss":
-                if model_name not in db_cache:
-                    db_cache[model_name] = create_vector_store(model_name=model_name)
-                db = db_cache[model_name]
-
-                qa_chain = RetrievalQA.from_chain_type(llm, retriever=db.as_retriever())
-                response = qa_chain.invoke({"query": user_message})
-                response_content = response["result"]
-
-            elif rag_type == "leann":
-                index_path = model_config["index_path"]
-                full_index_path = os.path.join(script_dir, index_path)
-
-                if full_index_path not in leann_searcher_cache:
-                    if not os.path.exists(full_index_path):
-                        raise FileNotFoundError(f"Leann index not found at {full_index_path}. Please build it first using the 'build-leann-index' command.")
-                    leann_searcher_cache[full_index_path] = LeannSearcher(full_index_path)
-
-                searcher = leann_searcher_cache[full_index_path]
-                results = searcher.search(user_message, top_k=3)
-                context = "\n\n".join([res["text"] for res in results])
-
-                template = """Answer the question based only on the following context:
-                {context}
-
-                Question: {question}
-                """
-                prompt = PromptTemplate.from_template(template)
-
-                chain = prompt | llm | StrOutputParser()
-                response_content = chain.invoke({"context": context, "question": user_message})
+            qa_chain = RetrievalQA.from_chain_type(llm, retriever=db.as_retriever())
+            response = qa_chain.invoke({"query": user_message})
+            response_content = response["result"]
 
         else:
             raise HTTPException(status_code=500, detail=f"Unsupported model type: {model_type}")

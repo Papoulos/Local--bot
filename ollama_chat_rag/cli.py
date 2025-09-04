@@ -3,8 +3,6 @@ import requests
 import uvicorn
 from multiprocessing import Process
 import os
-from leann import LeannBuilder
-from pathlib import Path
 from langchain_community.document_loaders import DirectoryLoader, UnstructuredFileLoader
 
 
@@ -76,35 +74,6 @@ def start(
         print(f"FastAPI application started in the background in {mode} mode.")
     else:
         run_app(prod=prod)
-
-@app.command()
-def build_leann_index(
-    index_path: str = typer.Option("leann_index.leann", "--index-path", "-p", help="Path to save the leann index."),
-    documents_path: str = typer.Option("documents", "--documents-path", "-d", help="Path to the documents directory.")
-):
-    """
-    Build a leann index from the documents.
-    """
-    print("Starting leann index build...")
-    documents = load_documents(documents_path)
-
-    # Initialize LeannBuilder
-    # Using 'hnsw' backend as a default, good for many use cases.
-    builder = LeannBuilder(backend_name="hnsw")
-
-    # Add documents to the builder
-    for doc in documents:
-        builder.add_text(doc.page_content)
-
-    # Build and save the index
-    # The index will be saved in the `ollama_chat_rag` directory.
-    script_dir = Path(os.path.dirname(__file__))
-    full_index_path = script_dir / index_path
-
-    print(f"Building and saving index to {full_index_path}...")
-    builder.build_index(str(full_index_path))
-
-    print("Leann index built successfully.")
 
 
 if __name__ == "__main__":

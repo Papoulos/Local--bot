@@ -1,0 +1,6 @@
+@echo off
+echo Installing dependencies...
+python -m pip install -r ollama_chat_rag/requirements.txt
+
+echo Running application...
+python -m ollama_chat_rag.cli %*
