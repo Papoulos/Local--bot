@@ -18,14 +18,25 @@ L'objectif principal de ce projet est de fournir une interface unifiée et sécu
 - **Support RAG :** Prise en charge intégrée de la Génération Augmentée par Récupération (RAG) pour discuter avec vos documents.
 - **Interface en Ligne de Commande (CLI) :** Une CLI simple pour démarrer le serveur et interagir avec les modèles.
 
+## Prérequis
+
+Ce projet utilise `uv` pour la gestion des dépendances, qui est une alternative extrêmement rapide à `pip`.
+
+Avant de continuer, assurez-vous d'avoir installé `uv`.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+Après l'installation, suivez les instructions pour ajouter `uv` à votre `PATH`.
+
 ## Installation du projet
 
 Si vous lisez ceci, vous avez probablement déjà cloné le dépôt.
 
 1.  **Installez les dépendances :**
-    Assurez-vous d'avoir Python 3.8+ installé.
+    Assurez-vous d'avoir Python 3.8+ et `uv` installés.
     ```bash
-    pip install -r ollama_chat_rag/requirements.txt
+    uv pip install -r ollama_chat_rag/requirements.txt
     ```
 
 2.  **Configurez l'environnement :**
