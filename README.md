@@ -1,120 +1,122 @@
-# Local AI Bot API Gateway
+# Passerelle API pour IA Locale
 
-This project provides a secure and configurable API gateway to interact with local language models running via [Ollama](https://ollama.ai/). It acts as a middleware, allowing you to define specific "models" in a configuration file that can point to different Ollama models or even trigger complex chains like Retrieval-Augmented Generation (RAG).
+Ce projet fournit une passerelle d'API sécurisée et configurable pour interagir avec des modèles de langage locaux via [Ollama](https://ollama.ai/). Il agit comme un middleware, vous permettant de définir des "modèles" spécifiques dans un fichier de configuration qui peuvent pointer vers différents modèles Ollama ou même déclencher des chaînes complexes comme la Génération Augmentée par Récupération (RAG).
 
-All API calls are secured by a secret API key. The request and response formats are standardized to be compatible with OpenAI's Chat Completions API, making it easy to integrate with existing tools.
+Toutes les appels API sont sécurisés par une clé API secrète. Les formats de requête et de réponse sont standardisés pour être compatibles avec l'API Chat Completions d'OpenAI, ce qui facilite l'intégration avec les outils existants.
 
-## Features
+---
 
-- **Configurable Model Routing:** Define keywords (e.g., "chat", "cypher_expert") in a `config.json` file and map them to different Ollama models or processing chains.
-- **API Key Authentication:** Protect your local models with a secret API key.
-- **Standardized API:** OpenAI-compatible request and response formats for easy integration.
-- **RAG Support:** Built-in support for Retrieval-Augmented Generation to chat with your documents.
-- **Simple CLI:** A command-line interface to easily start the server.
+## Objectif du projet
 
-## Setup
+L'objectif principal de ce projet est de fournir une interface unifiée et sécurisée pour vos modèles de langage locaux. Il permet de centraliser l'accès, de gérer différentes configurations de modèles (par exemple, un modèle pour la discussion générale, un autre spécialisé pour l'analyse de documents) et de protéger l'accès avec une clé API, que vous l'utilisiez localement ou que vous l'exposiez de manière sécurisée sur internet.
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository_url>
-    cd ollama-api-gateway
-    ```
+## Features du projet
 
-2.  **Install Dependencies:**
-    Make sure you have Python 3.8+ installed.
+- **Routage de Modèles Configurable :** Définissez des mots-clés (ex: "chat", "expert_cypher") dans un fichier `config.json` et mappez-les à différents modèles Ollama ou à des chaînes de traitement.
+- **Authentification par Clé API :** Protégez vos modèles locaux avec une clé API secrète.
+- **API Standardisée :** Formats de requête et de réponse compatibles avec OpenAI pour une intégration facile.
+- **Support RAG :** Prise en charge intégrée de la Génération Augmentée par Récupération (RAG) pour discuter avec vos documents.
+- **Interface en Ligne de Commande (CLI) :** Une CLI simple pour démarrer le serveur et interagir avec les modèles.
+
+## Installation du projet
+
+Si vous lisez ceci, vous avez probablement déjà cloné le dépôt.
+
+1.  **Installez les dépendances :**
+    Assurez-vous d'avoir Python 3.8+ installé.
     ```bash
     pip install -r ollama_chat_rag/requirements.txt
     ```
 
-3.  **Configure Environment:**
-    Copy the example `.env` file and edit it to set your secret API key.
+2.  **Configurez l'environnement :**
+    Copiez le fichier `.env.example` et modifiez-le pour définir votre clé API secrète.
     ```bash
     cp ollama_chat_rag/.env.example ollama_chat_rag/.env
     ```
-    Now, open `ollama_chat_rag/.env` and change the `API_KEY`.
+    Ensuite, ouvrez `ollama_chat_rag/.env` et changez la valeur de `API_KEY`.
 
-4.  **Configure Models:**
-    Open `ollama_chat_rag/config.json` to define your model mappings. The `type` can be `llm` for a standard model call or `rag` to use the document retrieval system.
-    ```json
-    {
-      "models": {
-        "chat": {
-          "type": "llm",
-          "model_name": "mistral"
-        },
-        "cypher": {
-          "type": "rag",
-          "model_name": "mistral"
-        }
-      }
+## Configuration et Options
+
+### 1. Configuration des Modèles
+
+Ouvrez `ollama_chat_rag/config.json` pour définir vos modèles. Le `type` peut être `llm` pour un appel de modèle standard ou `rag` pour utiliser le système de recherche de documents.
+
+```json
+{
+  "models": {
+    "chat": {
+      "type": "llm",
+      "model_name": "mistral"
+    },
+    "cypher": {
+      "type": "rag",
+      "model_name": "mistral"
     }
-    ```
+  }
+}
+```
 
-5.  **(For RAG) Add Documents:**
-    If you are using a `rag` type model, place your `.txt` files inside the `ollama_chat_rag/documents/` directory.
+Pour les modèles de type `rag`, placez vos fichiers (`.txt`, etc.) dans le dossier `ollama_chat_rag/documents/`.
 
-## How to Run
+### 2. Options de Lancement du Serveur
 
-Start the FastAPI server using the built-in command-line interface:
+Utilisez la CLI pour démarrer le serveur FastAPI.
 
 ```bash
 python -m ollama_chat_rag.cli start
 ```
 
-The API will be available at `http://localhost:8000`.
+Voici les options disponibles :
+-   `--mock` : Lance le serveur en mode "mock", sans connexion réelle à Ollama. Idéal pour les tests.
+-   `--prod` : Lance le serveur en mode "production", en écoutant sur `127.0.0.1:8000` (plus sécurisé pour une exposition via tunnel). Par défaut, le serveur écoute sur `0.0.0.0:8000`.
+-   `--background` ou `-b` : Lance le serveur en arrière-plan.
 
-## Secure Deployment
-
-To securely publish this API on the internet, please follow the detailed instructions in the deployment guide:
-
-**[➡️ Secure Deployment Guide](./DEPLOYMENT.md)**
-
-### Running in Mock Mode for Testing
-
-For development or testing purposes, you can run the server in a "mock" mode. In this mode, it does not connect to a real Ollama instance. Instead, it uses mock objects that return predictable, pre-defined responses.
-
-To start the server in mock mode, use the `--mock` flag:
-
+**Exemple de lancement en mode mock :**
 ```bash
 python -m ollama_chat_rag.cli start --mock
 ```
 
-You can then make API calls as usual, but you will receive mock responses, which is useful for testing your client application without relying on a running AI model.
+### 3. Commandes CLI Utilitaires
 
-## How to Use the API
+Des commandes sont aussi disponibles pour interroger directement votre API depuis le terminal (sans passer par `curl`) :
+-   `python -m ollama_chat_rag.cli chat "Votre message ici"`
+-   `python -m ollama_chat_rag.cli rag "Votre question sur les documents"`
 
-You can interact with the API using any HTTP client, like `curl`.
+## Exemples d'Utilisation de l'API
 
--   Replace `YOUR_API_KEY` with the key you set in the `.env` file.
--   The `model` in the JSON body should be one of the keys you defined in `config.json`.
+Vous pouvez interagir avec l'API en utilisant n'importe quel client HTTP, comme `curl`. Remplacez `VOTRE_CLE_API` par la clé définie dans le fichier `.env`.
 
-### Example: Standard Chat (`llm` type)
+### Exemple : Chat Standard (type `llm`)
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
 -H "Content-Type: application/json" \
--H "X-API-Key: YOUR_API_KEY" \
+-H "X-API-Key: VOTRE_CLE_API" \
 -d '{
     "model": "chat",
     "messages": [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Hello, who are you?"}
+        {"role": "system", "content": "Vous êtes un assistant serviable."},
+        {"role": "user", "content": "Bonjour, qui êtes-vous ?"}
     ]
 }'
 ```
 
-### Example: RAG Chat (`rag` type)
-
-This will use the documents in the `documents` folder to answer the question.
+### Exemple : Chat RAG (type `rag`)
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
 -H "Content-Type: application/json" \
--H "X-API-Key: YOUR_API_KEY" \
+-H "X-API-Key: VOTRE_CLE_API" \
 -d '{
     "model": "cypher",
     "messages": [
-        {"role": "user", "content": "What is the main topic of the document?"}
+        {"role": "user", "content": "Quel est le sujet principal du document ?"}
     ]
 }'
 ```
+
+## Déploiement Sécurisé
+
+Pour publier cette API de manière sécurisée sur internet, veuillez suivre les instructions détaillées dans le guide de déploiement :
+
+**[➡️ Guide de Déploiement Sécurisé](./DEPLOYMENT.md)**
