@@ -3,18 +3,13 @@ import requests
 import uvicorn
 from multiprocessing import Process
 import os
-from langchain_community.document_loaders import DirectoryLoader, UnstructuredFileLoader
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 app = typer.Typer()
 
-
-def load_documents(documents_path="documents"):
-    """Load documents from the specified directory."""
-    script_dir = os.path.dirname(__file__)
-    documents_path = os.path.join(script_dir, documents_path)
-    loader = DirectoryLoader(documents_path, glob="**/*.txt", loader_cls=UnstructuredFileLoader)
-    return loader.load()
 
 def run_app(prod: bool = False):
     """Run the FastAPI application using Uvicorn."""
@@ -39,16 +34,17 @@ def chat(message: str):
     """
     Chat with the Ollama model.
     """
-    response = requests.post("http://localhost:8000/chat", json={"message": message})
-    print(response.json()["response"])
-
-@app.command()
-def rag(question: str):
-    """
-    Ask a question to the RAG system.
-    """
-    response = requests.post("http://localhost:8000/rag", json={"question": question})
-    print(response.json()["response"])
+    api_key = os.getenv("API_KEY")
+    headers = {"X-API-Key": api_key} if api_key else {}
+    payload = {
+        "model": "chat",
+        "messages": [{"role": "user", "content": message}]
+    }
+    response = requests.post("http://localhost:8000/v1/chat/completions", json=payload, headers=headers)
+    if response.status_code == 200:
+        print(response.json()["choices"][0]["message"]["content"])
+    else:
+        print(f"Error {response.status_code}: {response.text}")
 
 @app.command()
 def start(
