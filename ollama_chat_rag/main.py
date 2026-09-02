@@ -4,27 +4,25 @@ import uuid
 import time
 import logging
 import sys
+import asyncio
 from typing import List, AsyncGenerator
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import DirectoryLoader, UnstructuredFileLoader
-from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
 
 
 # Conditionally import real or mock classes based on environment variable
 if os.getenv("USE_MOCK_OLLAMA", "false").lower() == "true":
     from .mock_ollama import MockChatOllama as ChatOllama
-    from .mock_ollama import MockOllamaEmbeddings as OllamaEmbeddings
 else:
     from langchain_ollama import ChatOllama
-    from langchain_ollama import OllamaEmbeddings
 
 load_dotenv()
 
@@ -35,7 +33,19 @@ logging.basicConfig(level=logging.INFO,
                         logging.FileHandler("debug.log"),
                         logging.StreamHandler()
                     ])
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, this should be restricted
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Load config
 script_dir = os.path.dirname(__file__)
@@ -47,7 +57,6 @@ API_KEY = os.getenv("API_KEY")
 
 # In-memory cache for expensive objects
 llm_cache = {}
-db_cache = {}
 
 async def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key != API_KEY:
@@ -97,21 +106,9 @@ class ChatCompletionChunk(BaseModel):
     choices: List[ChoiceChunk]
 
 
-def create_vector_store(documents_path="documents", model_name="mistral"):
-    script_dir = os.path.dirname(__file__)
-    documents_path = os.path.join(script_dir, documents_path)
-    loader = DirectoryLoader(documents_path, glob="**/*.txt", loader_cls=UnstructuredFileLoader)
-    documents = loader.load()
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    texts = text_splitter.split_documents(documents)
-    embeddings = OllamaEmbeddings(model=model_name)
-    db = FAISS.from_documents(texts, embeddings)
-    return db
-
 async def stream_generator(model_key: str, user_message: str, llm, model_config: dict) -> AsyncGenerator[str, None]:
     """Yields server-sent events for streaming responses."""
     request_id = f"chatcmpl-{uuid.uuid4()}"
-    model_type = model_config["type"]
     model_name = model_config["model_name"]
 
     # First chunk with role
@@ -122,41 +119,13 @@ async def stream_generator(model_key: str, user_message: str, llm, model_config:
     )
     yield f"data: {first_chunk.model_dump_json()}\n\n"
 
-    if model_type == "llm":
-        async for chunk in llm.astream(user_message):
-            chunk_delta = ChatCompletionChunk(
-                id=request_id,
-                model=model_key,
-                choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk.content))]
-            )
-            yield f"data: {chunk_delta.model_dump_json()}\n\n"
-
-    elif model_type == "rag":
-        template = """Answer the question based only on the following context:
-        {context}
-
-        Question: {question}
-        """
-        prompt = PromptTemplate.from_template(template)
-
-        if model_name not in db_cache:
-            db_cache[model_name] = create_vector_store(model_name=model_name)
-        db = db_cache[model_name]
-        retriever = db.as_retriever()
-
-        rag_chain = (
-            {"context": retriever, "question": RunnablePassthrough()}
-            | prompt
-            | llm
-            | StrOutputParser()
+    async for chunk in llm.astream(user_message):
+        chunk_delta = ChatCompletionChunk(
+            id=request_id,
+            model=model_key,
+            choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk.content))]
         )
-        async for chunk in rag_chain.astream(user_message):
-            chunk_delta = ChatCompletionChunk(
-                id=request_id,
-                model=model_key,
-                choices=[ChoiceChunk(delta=ChoiceDelta(content=chunk))]
-            )
-            yield f"data: {chunk_delta.model_dump_json()}\n\n"
+        yield f"data: {chunk_delta.model_dump_json()}\n\n"
 
     # Final chunk with finish reason
     final_chunk = ChatCompletionChunk(
@@ -169,7 +138,8 @@ async def stream_generator(model_key: str, user_message: str, llm, model_config:
 
 
 @app.post("/v1/chat/completions", dependencies=[Depends(verify_api_key)])
-async def chat_completions(request_data: ChatCompletionRequest, request: Request):
+@limiter.limit("60/minute")
+async def chat_completions(request: Request, request_data: ChatCompletionRequest):
     user_message = ""
     for msg in reversed(request_data.messages):
         if msg.role == 'user':
@@ -183,7 +153,6 @@ async def chat_completions(request_data: ChatCompletionRequest, request: Request
         raise HTTPException(status_code=404, detail=f"Model '{model_key}' not found.")
 
     model_config = config["models"][model_key]
-    model_type = model_config["type"]
     model_name = model_config["model_name"]
 
     if not user_message:
@@ -201,21 +170,8 @@ async def chat_completions(request_data: ChatCompletionRequest, request: Request
         )
     else:
         # Original non-streaming logic
-        response_content = ""
-        if model_type == "llm":
-            response = llm.invoke(user_message)
-            response_content = response.content
-        elif model_type == "rag":
-            if model_name not in db_cache:
-                db_cache[model_name] = create_vector_store(model_name=model_name)
-            db = db_cache[model_name]
-
-            qa_chain = RetrievalQA.from_chain_type(llm, retriever=db.as_retriever())
-            response = qa_chain.invoke({"query": user_message})
-            response_content = response["result"]
-
-        else:
-            raise HTTPException(status_code=500, detail=f"Unsupported model type: {model_type}")
+        response = await llm.ainvoke(user_message)
+        response_content = response.content
 
         response_message = ResponseMessage(role="assistant", content=response_content)
         choice = Choice(message=response_message)
